@@ -1,0 +1,355 @@
+syntax = "proto3";
+
+package notification.template.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
+option go_package = "github.com/yourorg/notification-system/pkg/api/template/v1";
+
+// TemplateService handles template management and rendering for notifications
+service TemplateService {
+  // Template Management
+  rpc CreateTemplate(CreateTemplateRequest) returns (CreateTemplateResponse);
+  rpc UpdateTemplate(UpdateTemplateRequest) returns (UpdateTemplateResponse);
+  rpc GetTemplate(GetTemplateRequest) returns (GetTemplateResponse);
+  rpc ListTemplates(ListTemplatesRequest) returns (ListTemplatesResponse);
+  rpc DeleteTemplate(DeleteTemplateRequest) returns (DeleteTemplateResponse);
+  
+  // Template Rendering
+  rpc RenderTemplate(RenderTemplateRequest) returns (RenderTemplateResponse);
+  rpc BatchRenderTemplate(BatchRenderTemplateRequest) returns (BatchRenderTemplateResponse);
+  
+  // Template Validation
+  rpc ValidateTemplate(ValidateTemplateRequest) returns (ValidateTemplateResponse);
+  
+  // Version Management
+  rpc GetTemplateVersion(GetTemplateVersionRequest) returns (GetTemplateVersionResponse);
+  rpc ListTemplateVersions(ListTemplateVersionsRequest) returns (ListTemplateVersionsResponse);
+  rpc PromoteTemplateVersion(PromoteTemplateVersionRequest) returns (PromoteTemplateVersionResponse);
+}
+
+// ============================================================================
+// Template Types and Enums
+// ============================================================================
+
+enum TemplateType {
+  TEMPLATE_TYPE_UNSPECIFIED = 0;
+  TEMPLATE_TYPE_EMAIL = 1;
+  TEMPLATE_TYPE_SMS = 2;
+  TEMPLATE_TYPE_PUSH = 3;
+  TEMPLATE_TYPE_IN_APP = 4;
+  TEMPLATE_TYPE_WEBHOOK = 5;
+}
+
+enum TemplateStatus {
+  TEMPLATE_STATUS_UNSPECIFIED = 0;
+  TEMPLATE_STATUS_DRAFT = 1;
+  TEMPLATE_STATUS_ACTIVE = 2;
+  TEMPLATE_STATUS_ARCHIVED = 3;
+  TEMPLATE_STATUS_DEPRECATED = 4;
+}
+
+enum TemplatePriority {
+  TEMPLATE_PRIORITY_UNSPECIFIED = 0;
+  TEMPLATE_PRIORITY_LOW = 1;
+  TEMPLATE_PRIORITY_MEDIUM = 2;
+  TEMPLATE_PRIORITY_HIGH = 3;
+  TEMPLATE_PRIORITY_CRITICAL = 4;
+}
+
+// ============================================================================
+// Template Models
+// ============================================================================
+
+message Template {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  TemplateType type = 4;
+  TemplateStatus status = 5;
+  TemplatePriority priority = 6;
+  
+  // Template content
+  TemplateContent content = 7;
+  
+  // Metadata
+  map<string, string> tags = 8;
+  string category = 9; // e.g., "transaction", "security", "marketing"
+  
+  // Versioning
+  int32 version = 10;
+  bool is_active_version = 11;
+  
+  // Localization
+  string locale = 12; // e.g., "en-US", "es-ES"
+  string fallback_locale = 13;
+  
+  // Audit fields
+  google.protobuf.Timestamp created_at = 14;
+  google.protobuf.Timestamp updated_at = 15;
+  string created_by = 16;
+  string updated_by = 17;
+  
+  // Compliance (important for banking)
+  repeated string compliance_tags = 18; // e.g., "PCI-DSS", "GDPR", "SOC2"
+  bool requires_approval = 19;
+  string approved_by = 20;
+  google.protobuf.Timestamp approved_at = 21;
+}
+
+message TemplateContent {
+  // Email specific
+  string subject = 1;
+  string html_body = 2;
+  string text_body = 3;
+  
+  // SMS/Push specific
+  string message = 4;
+  
+  // Push specific
+  string title = 5;
+  map<string, string> data = 6; // Additional push notification data
+  
+  // Common
+  repeated Attachment attachments = 7;
+  map<string, string> headers = 8; // Custom headers for email/webhook
+  
+  // Template variables documentation
+  repeated TemplateVariable variables = 9;
+}
+
+message Attachment {
+  string name = 1;
+  string url = 2;
+  string content_type = 3;
+  bool is_inline = 4;
+}
+
+message TemplateVariable {
+  string name = 1;
+  string description = 2;
+  string type = 3; // "string", "number", "date", "currency", etc.
+  bool required = 4;
+  string default_value = 5;
+  string example = 6;
+}
+
+// ============================================================================
+// Create Template
+// ============================================================================
+
+message CreateTemplateRequest {
+  string name = 1;
+  string description = 2;
+  TemplateType type = 3;
+  TemplateContent content = 4;
+  map<string, string> tags = 5;
+  string category = 6;
+  string locale = 7;
+  TemplatePriority priority = 8;
+  repeated string compliance_tags = 9;
+  bool requires_approval = 10;
+}
+
+message CreateTemplateResponse {
+  Template template = 1;
+}
+
+// ============================================================================
+// Update Template
+// ============================================================================
+
+message UpdateTemplateRequest {
+  string id = 1;
+  optional string name = 2;
+  optional string description = 3;
+  optional TemplateContent content = 4;
+  optional TemplateStatus status = 5;
+  map<string, string> tags = 6;
+  optional string category = 7;
+  optional TemplatePriority priority = 8;
+  bool create_new_version = 9; // If true, creates new version instead of updating
+}
+
+message UpdateTemplateResponse {
+  Template template = 1;
+  bool version_created = 2;
+}
+
+// ============================================================================
+// Get Template
+// ============================================================================
+
+message GetTemplateRequest {
+  string id = 1;
+  optional int32 version = 2; // If not specified, returns active version
+  optional string locale = 3; // Returns template for specific locale
+}
+
+message GetTemplateResponse {
+  Template template = 1;
+}
+
+// ============================================================================
+// List Templates
+// ============================================================================
+
+message ListTemplatesRequest {
+  // Pagination
+  int32 page_size = 1;
+  string page_token = 2;
+  
+  // Filters
+  optional TemplateType type = 3;
+  optional TemplateStatus status = 4;
+  optional string category = 5;
+  map<string, string> tags = 6;
+  optional string locale = 7;
+  optional string search_query = 8; // Search in name, description
+  
+  // Sorting
+  string order_by = 9; // e.g., "created_at desc", "name asc"
+}
+
+message ListTemplatesResponse {
+  repeated Template templates = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
+}
+
+// ============================================================================
+// Delete Template
+// ============================================================================
+
+message DeleteTemplateRequest {
+  string id = 1;
+  bool soft_delete = 2; // If true, archives instead of hard delete
+}
+
+message DeleteTemplateResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// ============================================================================
+// Render Template
+// ============================================================================
+
+message RenderTemplateRequest {
+  // Template identification
+  string template_id = 1;
+  optional int32 version = 2;
+  optional string locale = 3;
+  
+  // Rendering context
+  map<string, google.protobuf.Value> variables = 4;
+  
+  // User context (for personalization and audit)
+  string user_id = 5;
+  string account_id = 6;
+  map<string, string> user_metadata = 7;
+  
+  // Rendering options
+  bool validate_only = 8; // If true, validates without rendering
+  bool include_metadata = 9; // Include template metadata in response
+}
+
+message RenderTemplateResponse {
+  string rendered_subject = 1;
+  string rendered_html_body = 2;
+  string rendered_text_body = 3;
+  string rendered_message = 4;
+  string rendered_title = 5;
+  
+  // Metadata
+  TemplateType type = 6;
+  string template_id = 7;
+  int32 version = 8;
+  string locale = 9;
+  
+  // Validation
+  bool is_valid = 10;
+  repeated ValidationError validation_errors = 11;
+  
+  // Audit
+  google.protobuf.Timestamp rendered_at = 12;
+  map<string, string> rendered_metadata = 13;
+}
+
+// ============================================================================
+// Batch Render Template
+// ============================================================================
+
+message BatchRenderTemplateRequest {
+  repeated RenderTemplateRequest requests = 1;
+}
+
+message BatchRenderTemplateResponse {
+  repeated RenderTemplateResponse responses = 1;
+  int32 success_count = 2;
+  int32 failure_count = 3;
+}
+
+// ============================================================================
+// Validate Template
+// ============================================================================
+
+message ValidateTemplateRequest {
+  string template_id = 1;
+  optional TemplateContent content = 2; // If provided, validates content without saving
+  map<string, google.protobuf.Value> sample_variables = 3; // Sample data for validation
+}
+
+message ValidateTemplateResponse {
+  bool is_valid = 1;
+  repeated ValidationError errors = 2;
+  repeated ValidationWarning warnings = 3;
+}
+
+message ValidationError {
+  string field = 1;
+  string message = 2;
+  string error_code = 3;
+}
+
+message ValidationWarning {
+  string field = 1;
+  string message = 2;
+  string warning_code = 3;
+}
+
+// ============================================================================
+// Version Management
+// ============================================================================
+
+message GetTemplateVersionRequest {
+  string template_id = 1;
+  int32 version = 2;
+}
+
+message GetTemplateVersionResponse {
+  Template template = 1;
+}
+
+message ListTemplateVersionsRequest {
+  string template_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListTemplateVersionsResponse {
+  repeated Template versions = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
+}
+
+message PromoteTemplateVersionRequest {
+  string template_id = 1;
+  int32 version = 2; // Version to promote to active
+}
+
+message PromoteTemplateVersionResponse {
+  Template template = 1;
+  int32 previous_active_version = 2;
+}

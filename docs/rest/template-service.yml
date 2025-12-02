@@ -1,0 +1,881 @@
+openapi: 3.0.3
+info:
+  title: Template Service API
+  description: |
+    External-facing REST API for managing notification templates in the banking notification system.
+    
+    **Authentication**: All endpoints require JWT Bearer token authentication.
+    
+    **Rate Limits**: 
+    - Read operations: 1000 requests/hour
+    - Write operations: 100 requests/hour
+    
+    **Versioning**: API version is included in the URL path (v1).
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: api-support@yourbank.com
+
+servers:
+  - url: https://api.yourbank.com/notification/v1
+    description: Production
+  - url: https://api-staging.yourbank.com/notification/v1
+    description: Staging
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Templates
+    description: Template CRUD operations
+  - name: Rendering
+    description: Template rendering operations
+  - name: Versions
+    description: Template version management
+  - name: Validation
+    description: Template validation operations
+
+paths:
+  /templates:
+    get:
+      tags:
+        - Templates
+      summary: List templates
+      description: Retrieve a paginated list of templates with optional filtering
+      operationId: listTemplates
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [email, sms, push, in_app, webhook]
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, active, archived, deprecated]
+        - name: category
+          in: query
+          schema:
+            type: string
+            example: transaction
+        - name: locale
+          in: query
+          schema:
+            type: string
+            example: en-US
+        - name: search
+          in: query
+          description: Search in template name and description
+          schema:
+            type: string
+        - name: order_by
+          in: query
+          schema:
+            type: string
+            enum: [created_at_desc, created_at_asc, name_asc, name_desc]
+            default: created_at_desc
+      responses:
+        '200':
+          description: Successfully retrieved templates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    
+    post:
+      tags:
+        - Templates
+      summary: Create template
+      description: Create a new notification template
+      operationId: createTemplate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTemplateRequest'
+      responses:
+        '201':
+          description: Template created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /templates/{templateId}:
+    get:
+      tags:
+        - Templates
+      summary: Get template by ID
+      description: Retrieve a specific template by its ID
+      operationId: getTemplate
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - name: version
+          in: query
+          description: Specific version to retrieve (defaults to active version)
+          schema:
+            type: integer
+        - name: locale
+          in: query
+          schema:
+            type: string
+            example: en-US
+      responses:
+        '200':
+          description: Successfully retrieved template
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    
+    put:
+      tags:
+        - Templates
+      summary: Update template
+      description: Update an existing template
+      operationId: updateTemplate
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTemplateRequest'
+      responses:
+        '200':
+          description: Template updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    
+    delete:
+      tags:
+        - Templates
+      summary: Delete template
+      description: Delete or archive a template
+      operationId: deleteTemplate
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - name: soft_delete
+          in: query
+          description: If true, archives the template instead of permanently deleting
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: Template deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /templates/{templateId}/render:
+    post:
+      tags:
+        - Rendering
+      summary: Render template
+      description: |
+        Render a template with provided variables. This is typically used for preview purposes.
+        For production notification sending, use internal gRPC endpoints.
+      operationId: renderTemplate
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenderTemplateRequest'
+      responses:
+        '200':
+          description: Template rendered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenderTemplateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /templates/{templateId}/validate:
+    post:
+      tags:
+        - Validation
+      summary: Validate template
+      description: Validate template content and variables
+      operationId: validateTemplate
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateTemplateRequest'
+      responses:
+        '200':
+          description: Validation completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /templates/{templateId}/versions:
+    get:
+      tags:
+        - Versions
+      summary: List template versions
+      description: Retrieve all versions of a specific template
+      operationId: listTemplateVersions
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Successfully retrieved template versions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateVersionListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /templates/{templateId}/versions/{version}/promote:
+    post:
+      tags:
+        - Versions
+      summary: Promote template version
+      description: Promote a specific version to be the active version
+      operationId: promoteTemplateVersion
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Version promoted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from authentication service
+
+  parameters:
+    TemplateId:
+      name: templateId
+      in: path
+      required: true
+      description: Unique identifier of the template
+      schema:
+        type: string
+        format: uuid
+        example: 550e8400-e29b-41d4-a716-446655440000
+
+  schemas:
+    Template:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        name:
+          type: string
+          example: transaction_confirmation
+        description:
+          type: string
+          example: Email template for transaction confirmations
+        type:
+          type: string
+          enum: [email, sms, push, in_app, webhook]
+        status:
+          type: string
+          enum: [draft, active, archived, deprecated]
+        priority:
+          type: string
+          enum: [low, medium, high, critical]
+        content:
+          $ref: '#/components/schemas/TemplateContent'
+        tags:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            department: fraud
+            channel: email
+        category:
+          type: string
+          example: transaction
+        version:
+          type: integer
+          example: 3
+        is_active_version:
+          type: boolean
+          example: true
+        locale:
+          type: string
+          example: en-US
+        fallback_locale:
+          type: string
+          example: en
+        compliance_tags:
+          type: array
+          items:
+            type: string
+          example: [PCI-DSS, GDPR]
+        requires_approval:
+          type: boolean
+          example: true
+        approved_by:
+          type: string
+          nullable: true
+          example: john.doe@yourbank.com
+        approved_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        created_by:
+          type: string
+          example: admin@yourbank.com
+        updated_by:
+          type: string
+          example: admin@yourbank.com
+
+    TemplateContent:
+      type: object
+      properties:
+        subject:
+          type: string
+          example: "Transaction Alert: {{transaction_amount}} charged to your account"
+          description: Email subject line (supports templating)
+        html_body:
+          type: string
+          example: "<html><body><h1>Transaction Confirmation</h1><p>Amount: {{transaction_amount}}</p></body></html>"
+          description: HTML email body
+        text_body:
+          type: string
+          example: "Transaction Confirmation\n\nAmount: {{transaction_amount}}"
+          description: Plain text email body
+        message:
+          type: string
+          example: "{{transaction_amount}} charged to account ending in {{account_last4}}"
+          description: SMS or push notification message
+        title:
+          type: string
+          example: "Transaction Alert"
+          description: Push notification title
+        data:
+          type: object
+          additionalProperties:
+            type: string
+          description: Additional structured data for push notifications
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Attachment'
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            X-Priority: "1"
+        variables:
+          type: array
+          items:
+            $ref: '#/components/schemas/TemplateVariable'
+          description: Documentation of expected variables
+
+    Attachment:
+      type: object
+      properties:
+        name:
+          type: string
+          example: receipt.pdf
+        url:
+          type: string
+          format: uri
+          example: https://cdn.yourbank.com/receipts/12345.pdf
+        content_type:
+          type: string
+          example: application/pdf
+        is_inline:
+          type: boolean
+          example: false
+
+    TemplateVariable:
+      type: object
+      properties:
+        name:
+          type: string
+          example: transaction_amount
+        description:
+          type: string
+          example: The transaction amount with currency symbol
+        type:
+          type: string
+          example: currency
+        required:
+          type: boolean
+          example: true
+        default_value:
+          type: string
+          nullable: true
+          example: "$0.00"
+        example:
+          type: string
+          example: "$1,234.56"
+
+    CreateTemplateRequest:
+      type: object
+      required:
+        - name
+        - type
+        - content
+      properties:
+        name:
+          type: string
+          pattern: '^[a-z0-9_]+$'
+          example: transaction_confirmation
+        description:
+          type: string
+        type:
+          type: string
+          enum: [email, sms, push, in_app, webhook]
+        content:
+          $ref: '#/components/schemas/TemplateContent'
+        tags:
+          type: object
+          additionalProperties:
+            type: string
+        category:
+          type: string
+        locale:
+          type: string
+          default: en-US
+        priority:
+          type: string
+          enum: [low, medium, high, critical]
+          default: medium
+        compliance_tags:
+          type: array
+          items:
+            type: string
+        requires_approval:
+          type: boolean
+          default: false
+
+    UpdateTemplateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        content:
+          $ref: '#/components/schemas/TemplateContent'
+        status:
+          type: string
+          enum: [draft, active, archived, deprecated]
+        tags:
+          type: object
+          additionalProperties:
+            type: string
+        category:
+          type: string
+        priority:
+          type: string
+          enum: [low, medium, high, critical]
+        create_new_version:
+          type: boolean
+          default: false
+          description: If true, creates a new version instead of updating current
+
+    RenderTemplateRequest:
+      type: object
+      required:
+        - variables
+      properties:
+        version:
+          type: integer
+          description: Specific version to render (defaults to active)
+        locale:
+          type: string
+          example: en-US
+        variables:
+          type: object
+          additionalProperties: true
+          example:
+            transaction_amount: "$1,234.56"
+            account_last4: "1234"
+            merchant_name: "Amazon.com"
+            transaction_date: "2025-01-15"
+        user_context:
+          type: object
+          properties:
+            user_id:
+              type: string
+            account_id:
+              type: string
+            metadata:
+              type: object
+              additionalProperties:
+                type: string
+        validate_only:
+          type: boolean
+          default: false
+          description: Only validate without rendering
+        include_metadata:
+          type: boolean
+          default: false
+
+    RenderTemplateResponse:
+      type: object
+      properties:
+        rendered_subject:
+          type: string
+          example: "Transaction Alert: $1,234.56 charged to your account"
+        rendered_html_body:
+          type: string
+        rendered_text_body:
+          type: string
+        rendered_message:
+          type: string
+        rendered_title:
+          type: string
+        type:
+          type: string
+          enum: [email, sms, push, in_app, webhook]
+        template_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        locale:
+          type: string
+        is_valid:
+          type: boolean
+        validation_errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationError'
+        rendered_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+
+    ValidateTemplateRequest:
+      type: object
+      properties:
+        content:
+          $ref: '#/components/schemas/TemplateContent'
+          description: Optional content to validate without saving
+        sample_variables:
+          type: object
+          additionalProperties: true
+          description: Sample data to test template rendering
+
+    ValidationResponse:
+      type: object
+      properties:
+        is_valid:
+          type: boolean
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationError'
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationWarning'
+
+    ValidationError:
+      type: object
+      properties:
+        field:
+          type: string
+          example: content.html_body
+        message:
+          type: string
+          example: Missing required variable 'transaction_amount'
+        error_code:
+          type: string
+          example: MISSING_REQUIRED_VARIABLE
+
+    ValidationWarning:
+      type: object
+      properties:
+        field:
+          type: string
+        message:
+          type: string
+        warning_code:
+          type: string
+
+    TemplateResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Template'
+        metadata:
+          type: object
+          properties:
+            request_id:
+              type: string
+              format: uuid
+
+    TemplateListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Template'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+        metadata:
+          type: object
+          properties:
+            request_id:
+              type: string
+              format: uuid
+
+    TemplateVersionListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Template'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        page_size:
+          type: integer
+          example: 20
+        total_count:
+          type: integer
+          example: 150
+        total_pages:
+          type: integer
+          example: 8
+        has_next:
+          type: boolean
+        has_previous:
+          type: boolean
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: INVALID_REQUEST
+            message:
+              type: string
+              example: Invalid template format
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                  issue:
+                    type: string
+            request_id:
+              type: string
+              format: uuid
+            timestamp:
+              type: string
+              format: date-time
+
+  responses:
+    BadRequest:
+      description: Bad Request - Invalid input
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    
+    Unauthorized:
+      description: Unauthorized - Invalid or missing JWT token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    
+    Forbidden:
+      description: Forbidden - Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    
+    NotFound:
+      description: Not Found - Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    
+    TooManyRequests:
+      description: Too Many Requests - Rate limit exceeded
+      headers:
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+          description: Request limit per hour
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+          description: Remaining requests in current window
+        X-RateLimit-Reset:
+          schema:
+            type: integer
+          description: Time when the rate limit resets (Unix timestamp)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    
+    InternalServerError:
+      description: Internal Server Error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
